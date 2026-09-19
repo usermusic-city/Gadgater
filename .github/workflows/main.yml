@@ -1,173 +1,84 @@
-# Gadgater 构建配置文件
-# 适用于CI/CD和本地构建
-
-name: Gadgater Build and Test
+name: Gadgater Release Build
 
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-release:
+    name: Build Release APK
     runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: 'gradle'
-        
-    - name: Cache Gradle dependencies
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
-          
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-      
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug --no-daemon -Dorg.gradle.vfs.watch=false -Djava.io.tmpdir=./.gradle-tmp --stacktrace
-      
-    - name: Run tests
-      run: ./gradlew test --no-daemon
-      
-    - name: Upload APK
-      uses: actions/upload-artifact@v3
-      with:
-        name: gadgater-apk
-        path: app/build/outputs/apk/debug/*.apk
 
-  lint:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-      
-    - name: Run lint checks
-      run: ./gradlew lintDebug --no-daemon
+    env:
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk
+      GRADLE_HOME: /opt/gradle
+      ANDROID_HOME: /opt/android-sdk
+      PROJECT_DIR: /sdcard/projects/Gadgater-0.1.2
 
-  deploy:
-    needs: [build, lint]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-      
-    - name: Build release APK
-      run: ./gradlew assembleRelease --no-daemon -Dorg.gradle.vfs.watch=false -Djava.io.tmpdir=./.gradle-tmp --stacktrace
-      
-    - name: Upload release APK
-      uses: actions/upload-artifact@v3
-      with:
-        name: gadgater-release-apk
-        path: app/build/outputs/apk/release/*.apk
-        
-    - name: Sign and align APK (optional)
-      run: |
-        # 这里可以添加签名和align的步骤
-        echo "APK签名和对齐步骤"
-        
-  docker-build:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      
-    - name: Set up Docker buildx
-      uses: docker/setup-buildx-action@v2
-      
-    - name: Login to Docker Hub
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v2
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-        
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        file: ./Dockerfile
-        push: ${{ github.event_name != 'pull_request' }}
-        tags: gadgater/gadgeter:latest
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-# Workflow to validate the build configuration
-validate-build:
-  runs-on: ubuntu-latest
-  needs: [build]
-  
-  steps:
-  - name: Validate APK
-    run: |
-      echo "验证构建的APK文件"
-      ls -la app/build/outputs/apk/debug/*.apk
-      # 检查APK文件是否有效
-      if [ -f "app/build/outputs/apk/debug/*.apk" ]; then
-        echo "APK文件存在"
-      else
-        echo "APK文件不存在"
-        exit 1
-      fi
-      
-  - name: Check build logs
-    run: |
-      echo "检查构建日志"
-      cat app/build/reports/build/rebuild.log
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
 
-# Matrix build for different Android versions
-matrix-build:
-  runs-on: ${{ matrix.os }}
-  strategy:
-    matrix:
-      os: [ubuntu-latest, macos-latest, windows-latest]
-      android-sdk: [30, 31, 32, 33, 34]
-      
-  steps:
-  - name: Setup environment
-    uses: actions/setup-java@v3
-    with:
-      java-version: '17'
-      distribution: 'temurin'
-      
-  - name: Set up Android SDK
-    uses: android/setup-java@v3
-    with:
-      distribution: 'temurin'
-      android-sdk: ${{ matrix.android-sdk }}
-      
-  - name: Build for Android ${{ matrix.android-sdk }}
-    run: ./gradlew assembleDebug --no-daemon -Dorg.gradle.vfs.watch=false -Djava.io.tmpdir=./.gradle-tmp --stacktrace
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools-version: 34.0.0
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle
+          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+          restore-keys: gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Clean build
+        run: ./gradlew clean --no-daemon -Dorg.gradle.vfs.watch=false --stacktrace
+
+      - name: Build Release APK
+        run: |
+          ./gradlew assembleRelease \
+            --no-daemon \
+            -Dorg.gradle.vfs.watch=false \
+            -Djava.io.tmpdir=./.gradle-tmp \
+            --stacktrace
+
+      - name: List output
+        run: |
+          echo "=== Build Output ==="
+          find . -name "*.apk" -type f -exec ls -lh {} \;
+          echo "=== APK Details ==="
+          ls -lh app/build/outputs/apk/release/
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: gadgater-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.2-${{ github.run_number }}
+          name: Gadgater v0.1.2 Build ${{ github.run_number }}
+          files: app/build/outputs/apk/release/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
