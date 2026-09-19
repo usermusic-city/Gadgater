@@ -20,32 +20,39 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          accept-licenses: true
-          log-accepted-android-sdk-licenses: false
-
       - name: Install Android SDK packages
         shell: bash
         run: |
           set -e
+          SDK_DIR="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "SDK_DIR=$SDK_DIR"
+          if ! command -v sdkmanager >/dev/null 2>&1; then
+            if [ -x "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]; then
+              echo "$SDK_DIR/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+              export PATH="$SDK_DIR/cmdline-tools/latest/bin:$PATH"
+            fi
+          fi
+          command -v sdkmanager
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Verify Android SDK
         shell: bash
         run: |
           set -e
+          SDK_DIR="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          if ! command -v sdkmanager >/dev/null 2>&1; then
+            export PATH="$SDK_DIR/cmdline-tools/latest/bin:$PATH"
+          fi
           echo "ANDROID_HOME=${ANDROID_HOME:-}"
           echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
           sdkmanager --list_installed
-          SDK_DIR="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           test -d "$SDK_DIR/platforms/android-34"
           test -d "$SDK_DIR/build-tools/34.0.0"
 
